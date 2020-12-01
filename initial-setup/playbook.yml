@@ -1,0 +1,50 @@
+---
+- hosts: all #modify your server list
+  remote_user: root
+
+  tasks:
+  - include_vars: users.yml
+  - include_vars: packages.yml
+  - name: Update apt
+    apt: update_cache=yes
+
+  - name: Install required system packages
+    apt: name={{ sys_packages }} state=latest
+
+  - name: Ensure NFS common is installed.
+    apt: name=nfs-common state=present update_cache=yes
+
+  - name: Create mountable dir
+    file: path=/nfs state=directory mode=777 owner=root group=root
+
+  - name: set mountpoints
+    mount: name=/nfs src={{ nfs_server_address }}:{{ nfs_share }} fstype=nfs opts=defaults,nofail dump=0 passno=0 state=mounted
+
+  - name: Make sure we have a 'wheel' group
+    group:
+      name: wheel
+      state: present
+
+  - name: Allow 'wheel' group to have passwordless sudo
+    lineinfile:
+      path: /etc/sudoers
+      state: present
+      regexp: '^%wheel'
+      line: '%wheel ALL=(ALL) NOPASSWD: ALL'
+      validate: '/usr/sbin/visudo -cf %s'
+
+  - name: update users
+    user: 
+      name: "{{ item.username }}"
+      state: present
+      groups: wheel
+      append: true
+      create_home: true
+      shell: /bin/bash
+    with_items: "{{ users }}"
+
+
+  - name: Placing SSH Key to Authorized Key
+  #please note that this code assumes as if the public-private key pair is generated, all public users (created above) have public keys copied at one place i.e. keyfiles directory for the ease
+    authorized_key: user="{{item.username}}" key="{{ lookup('file', './keyfiles/{{ item.username}}.pub')}}"
+    with_items: "{{ users }}"
